@@ -7,6 +7,8 @@ only. No network, no wall-clock, no randomness: fully deterministic.
 """
 
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 TEXT = """Thank you. Not for a score, or a rank — for the reading itself.
@@ -40,10 +42,43 @@ def resolve_output_dir():
     raise OSError("no writable output directory found")
 
 
+def validate_text(text):
+    """The graded run must carry a non-empty thank-you within the
+    1-1000 Unicode code point budget. Fail loudly before writing
+    anything, so a broken entry can never reach the grader."""
+    n = len(text)
+    if n < 1 or n > 1000:
+        print(
+            f"error: TEXT must be 1-1000 Unicode code points, got {n}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def write_atomic(path, text):
+    """Write via a temp file in the same directory, then os.replace,
+    so entry.txt is never left half-written."""
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=".entry.", suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
 def main():
+    validate_text(TEXT)
     out_dir = resolve_output_dir()
     out_path = out_dir / "entry.txt"
-    out_path.write_text(TEXT, encoding="utf-8", newline="")
+    write_atomic(out_path, TEXT)
     print(f"wrote {out_path} ({len(TEXT)} characters)")
 
 
